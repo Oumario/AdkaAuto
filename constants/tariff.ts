@@ -1,5 +1,15 @@
 // ADKA AUTO — Embedded Tariff Data (from Excel TARIF sheet — Avril 2025)
 
+export interface VehicleOption {
+  id: string;
+  name: string;
+  code: string;          // Code équipement
+  priceHT: number;
+  tvaRate: number;       // 20 typically
+  priceTTC: number;
+  availableOn: string[]; // trim level names where available (from column headers)
+}
+
 export interface VehicleModel {
   id: string;
   name: string;
@@ -18,6 +28,7 @@ export interface VehicleModel {
   discountParticulier: number | null;
   discountLoueur: number | null;
   discountConvention: number | null;
+  options?: VehicleOption[]; // Model-specific options from OPTIONS section
 }
 
 export const TARIFF_VERSION = {

@@ -21,7 +21,7 @@
  */
 
 import * as XLSX from 'xlsx';
-import { VehicleModel } from '../constants/tariff';
+import { VehicleModel, VehicleOption } from '../constants/tariff';
 
 export interface ParsedTariff {
   brand: 'RENAULT' | 'DACIA';
@@ -143,6 +143,145 @@ function generateId(brand: 'RENAULT' | 'DACIA', category: string, index: number)
   const cat = category.replace(/[^a-zA-Z]/g, '').slice(0, 4).toLowerCase();
   return `${b}-${cat}-${index}`;
 }
+
+// ── OPTION PARSING ───────────────────────────────────────────────────────────
+
+/**
+ * Parse the OPTIONS section from a model-specific sheet.
+ * Looks for a row containing "Designation équipements" in col 2 (0-indexed),
+ * then reads rows until it hits an empty designation.
+ */
+export function parseOptionsFromSheet(
+  sheet: XLSX.WorkSheet,
+  modelIdPrefix: string
+): VehicleOption[] {
+  const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+  const options: VehicleOption[] = [];
+
+  let headerRowIndex = -1;
+  let trimHeaders: string[] = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const cell2 = String(row[2] || '').toLowerCase();
+    // Look for the options header row
+    if (cell2.includes('designation') || cell2.includes('d\u00e9signation')) {
+      headerRowIndex = i;
+      // Trim names start from col 8 onwards
+      trimHeaders = [];
+      for (let c = 8; c < Math.min(row.length, 14); c++) {
+        const h = String(row[c] || '').trim();
+        if (h && h !== 'NaN') trimHeaders.push(h.toUpperCase());
+      }
+      continue;
+    }
+
+    // Skip the price label row right after header (CLIENT HT, TVA, etc.)
+    if (headerRowIndex >= 0 && i === headerRowIndex + 1) continue;
+
+    if (headerRowIndex >= 0 && i > headerRowIndex + 1) {
+      const name = String(row[2] || '').trim();
+      if (!name || name === 'NaN' || name.length < 2) {
+        // Stop at first empty row after options start
+        if (options.length > 0) break;
+        continue;
+      }
+
+      const priceHT = safeNum(row[4]);
+      const tvaRate = safeNum(row[5], 20);
+      const priceTTC = safeNum(row[7]);
+      const code = String(row[3] || '').trim().replace('NaN', '');
+
+      // Determine which trims this option is available on
+      const availableOn: string[] = [];
+      for (let c = 8; c < 8 + trimHeaders.length && c < row.length; c++) {
+        const val = String(row[c] || '').trim();
+        if (val === 'X' || val === 'x') {
+          const trimName = trimHeaders[c - 8];
+          if (trimName) availableOn.push(trimName);
+        }
+      }
+
+      // Only include options with a real price or known free options (price 0 but explicitly listed)
+      if (name && (priceTTC > 0 || priceHT >= 0)) {
+        options.push({
+          id: `${modelIdPrefix}-opt-${options.length + 1}`,
+          name,
+          code,
+          priceHT,
+          tvaRate: tvaRate || 20,
+          priceTTC,
+          availableOn,
+        });
+      }
+    }
+  }
+
+  return options;
+}
+
+/**
+ * Match individual model sheets to parsed VehicleModel entries and attach their options.
+ * Uses fuzzy matching on sheet name vs. model category.
+ */
+function attachOptionsFromSheets(
+  workbook: XLSX.WorkBook,
+  models: VehicleModel[]
+): VehicleModel[] {
+  // Build a map of sheetName -> options
+  const sheetOptionsMap: Record<string, VehicleOption[]> = {};
+
+  for (const sheetName of workbook.SheetNames) {
+    const upperSheet = sheetName.toUpperCase().trim();
+    // Skip summary/recap sheets
+    if (
+      upperSheet.includes('TARIF') ||
+      upperSheet.includes('RECAP') ||
+      upperSheet.includes('MARGE') ||
+      upperSheet.includes('R\u00c9SEAU') ||
+      upperSheet.includes('RESEAU') ||
+      upperSheet.includes('DACIA') ||
+      upperSheet.includes('REMISE')
+    ) continue;
+
+    const sheet = workbook.Sheets[sheetName];
+    const prefix = upperSheet.replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    const opts = parseOptionsFromSheet(sheet, prefix.toLowerCase());
+    if (opts.length > 0) {
+      sheetOptionsMap[upperSheet] = opts;
+    }
+  }
+
+  // Match each model to the best sheet
+  return models.map(model => {
+    const catUpper = model.category.toUpperCase();
+    const nameUpper = model.name.toUpperCase();
+
+    let bestMatch: string | null = null;
+    let bestScore = 0;
+
+    for (const sheetName of Object.keys(sheetOptionsMap)) {
+      // Score based on keyword overlap
+      const keywords = sheetName.split(/[\s_]+/);
+      let score = 0;
+      for (const kw of keywords) {
+        if (kw.length < 2) continue;
+        if (catUpper.includes(kw) || nameUpper.includes(kw)) score += kw.length;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = sheetName;
+      }
+    }
+
+    if (bestMatch && bestScore >= 4) {
+      return { ...model, options: sheetOptionsMap[bestMatch] };
+    }
+    return model;
+  });
+}
+
+// ── WORKBOOK PARSING ──────────────────────────────────────────────────────────
 
 export function parseTariffWorkbook(data: ArrayBuffer): TariffImportResult {
   const errors: string[] = [];
@@ -275,28 +414,37 @@ export function parseTariffWorkbook(data: ArrayBuffer): TariffImportResult {
     else renaultModels.push(model);
   }
 
-  if (renaultModels.length === 0 && daciaModels.length === 0) {
+  // Attach model-specific options from individual sheets
+  const enrichedRenault = attachOptionsFromSheets(workbook, renaultModels);
+  const enrichedDacia = attachOptionsFromSheets(workbook, daciaModels);
+
+  if (enrichedRenault.length === 0 && enrichedDacia.length === 0) {
     errors.push(
       'Aucun modèle valide trouvé. Vérifiez que le fichier utilise le format standard ADKA AUTO avec une feuille "TARIF".'
     );
     return {
-      success: false, renaultModels, daciaModels,
+      success: false, renaultModels: enrichedRenault, daciaModels: enrichedDacia,
       totalModels: 0, errors, warnings, sheetName: tarifSheetName,
     };
   }
 
-  if (renaultModels.length < 3) {
-    warnings.push(`Seulement ${renaultModels.length} modèles RENAULT détectés — résultat peut-être incomplet.`);
+  if (enrichedRenault.length < 3) {
+    warnings.push(`Seulement ${enrichedRenault.length} mod\u00e8les RENAULT d\u00e9tect\u00e9s \u2014 r\u00e9sultat peut-\u00eatre incomplet.`);
   }
-  if (daciaModels.length < 3) {
-    warnings.push(`Seulement ${daciaModels.length} modèles DACIA détectés — résultat peut-être incomplet.`);
+  if (enrichedDacia.length < 3) {
+    warnings.push(`Seulement ${enrichedDacia.length} mod\u00e8les DACIA d\u00e9tect\u00e9s \u2014 r\u00e9sultat peut-\u00eatre incomplet.`);
+  }
+
+  const optionsWithData = [...enrichedRenault, ...enrichedDacia].filter(m => m.options && m.options.length > 0).length;
+  if (optionsWithData > 0) {
+    warnings.push(`\u2705 Options extraites pour ${optionsWithData} mod\u00e8le(s) depuis les feuilles individuelles.`);
   }
 
   return {
     success: true,
-    renaultModels,
-    daciaModels,
-    totalModels: renaultModels.length + daciaModels.length,
+    renaultModels: enrichedRenault,
+    daciaModels: enrichedDacia,
+    totalModels: enrichedRenault.length + enrichedDacia.length,
     errors,
     warnings,
     sheetName: tarifSheetName,

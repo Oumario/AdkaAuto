@@ -1,10 +1,15 @@
-import { VehicleModel, FRAIS_ENREGISTREMENT_STANDARD } from '../constants/tariff';
+import { VehicleModel, VehicleOption, FRAIS_ENREGISTREMENT_STANDARD } from '../constants/tariff';
 import { Accessory } from '../constants/accessories';
 
 export type ClientType = 'particulier' | 'loueur' | 'entreprise' | 'convention' | 'taxieur';
 
 export interface SelectedAccessory {
   accessory: Accessory;
+  quantity: number;
+}
+
+export interface SelectedOption {
+  option: VehicleOption;
   quantity: number;
 }
 
@@ -20,6 +25,7 @@ export interface CalculationInput {
   discountPercent: number;       // % remise client (saisie manuelle)
   flashPercent: number;          // % flash marketing (saisie manuelle)
   accessories: SelectedAccessory[];
+  selectedOptions: SelectedOption[];   // model-specific options
   paint: PaintOption;
   clientName?: string;
   clientRef?: string;
@@ -38,7 +44,11 @@ export interface PriceBreakdown {
   paintPriceHT: number;
   paintPriceTTC: number;
 
-  // Accessories
+  // Vehicle options (from tariff)
+  vehicleOptionsTotalHT: number;
+  vehicleOptionsTotalTTC: number;
+
+  // Generic accessories
   accessoriesTotalHT: number;
   accessoriesTotalTTC: number;
 
@@ -94,7 +104,7 @@ export function getClientTypeDiscount(model: VehicleModel, clientType: ClientTyp
 }
 
 export function calculate(input: CalculationInput): PriceBreakdown {
-  const { model, clientType, discountPercent, flashPercent, accessories, paint } = input;
+  const { model, clientType, discountPercent, flashPercent, accessories, selectedOptions = [], paint } = input;
 
   const vehiclePriceTTC = model.priceTTC;
   const vehiclePriceHT = model.priceHT;
@@ -104,7 +114,15 @@ export function calculate(input: CalculationInput): PriceBreakdown {
   const paintPriceHT = paint.isMetallic ? paint.priceHT : 0;
   const paintPriceTTC = round2(paintPriceHT * 1.2);
 
-  // Accessories (at 20% TVA)
+  // Vehicle options from tariff sheet (at their own TVA rate, typically 20%)
+  const vehicleOptionsTotalHT = round2(
+    selectedOptions.reduce((sum, so) => sum + so.option.priceHT * so.quantity, 0)
+  );
+  const vehicleOptionsTotalTTC = round2(
+    selectedOptions.reduce((sum, so) => sum + so.option.priceTTC * so.quantity, 0)
+  );
+
+  // Generic accessories (at 20% TVA)
   const accessoriesTotalHT = round2(
     accessories.reduce((sum, sa) => sum + sa.accessory.priceHT * sa.quantity, 0)
   );
@@ -141,12 +159,12 @@ export function calculate(input: CalculationInput): PriceBreakdown {
   if (tvaRate === 10) {
     totalHTTaux10 = round2(netVehiclePriceHT);
     totalTVA10 = round2(totalHTTaux10 * 0.10);
-    // 20% base: FMS + paint + accessories
-    totalHTTaux20 = round2(fraisMiseEnServiceHT + paintPriceHT + accessoriesTotalHT);
+    // 20% base: FMS + paint + accessories + vehicle options
+    totalHTTaux20 = round2(fraisMiseEnServiceHT + paintPriceHT + accessoriesTotalHT + vehicleOptionsTotalHT);
     totalTVA20 = round2(totalHTTaux20 * 0.20);
   } else {
-    // 20% vehicle
-    totalHTTaux20 = round2(netVehiclePriceHT + fraisMiseEnServiceHT + paintPriceHT + accessoriesTotalHT);
+    // 20% vehicle + everything else
+    totalHTTaux20 = round2(netVehiclePriceHT + fraisMiseEnServiceHT + paintPriceHT + accessoriesTotalHT + vehicleOptionsTotalHT);
     totalTVA20 = round2(totalHTTaux20 * 0.20);
   }
 
@@ -161,6 +179,8 @@ export function calculate(input: CalculationInput): PriceBreakdown {
     tvaRate,
     paintPriceHT,
     paintPriceTTC,
+    vehicleOptionsTotalHT,
+    vehicleOptionsTotalTTC,
     accessoriesTotalHT,
     accessoriesTotalTTC,
     discountPercent,

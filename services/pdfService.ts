@@ -13,6 +13,7 @@ interface InvoiceData {
     naturesDossier: string;
     chassisNumber: string;
     accessories: { accessory: { id: string; name: string; priceTTC: number; priceHT: number }; quantity: number }[];
+    selectedOptions: { option: { id: string; name: string; code: string; priceHT: number; priceTTC: number }; quantity: number }[];
     paint: { isMetallic: boolean; priceHT: number; priceTTC: number };
   };
   breakdown: PriceBreakdown;
@@ -37,6 +38,14 @@ export async function generateAndSharePDF(invoiceData: InvoiceData): Promise<voi
     month: 'long',
     year: 'numeric',
   });
+
+  const vehicleOptionsRows = (state.selectedOptions || []).map(so => `
+    <tr>
+      <td class="td-left">${so.option.name}${so.option.code ? ` <span class="qty-badge">${so.option.code}</span>` : ''}</td>
+      <td class="td-right">${so.option.priceHT > 0 ? fmt(so.option.priceHT) : '—'}</td>
+      <td class="td-right">${so.option.priceTTC > 0 ? fmt(so.option.priceTTC) : 'Inclus'}</td>
+    </tr>
+  `).join('');
 
   const accessoriesRows = state.accessories.map(sa => `
     <tr>
@@ -421,6 +430,7 @@ export async function generateAndSharePDF(invoiceData: InvoiceData): Promise<voi
         <td class="td-right">${fmt(bd.vehiclePriceHT)}</td>
         <td class="td-right">${fmt(bd.vehiclePriceTTC)}</td>
       </tr>
+      ${vehicleOptionsRows}
       ${paintRow}
       ${accessoriesRows}
       ${fmsRow}

@@ -30,6 +30,7 @@ export default function CalculatorScreen() {
   const { addInvoice } = useInvoices();
   const { state, setBrand, setModel, setClientType,
     setDiscountPercent, setFlashPercent, setPaint,
+    addVehicleOption, removeVehicleOption,
     addAccessory, removeAccessory, updateAccessoryQty,
     setClientInfo, computePrice, goToStep, reset,
   } = useCalculator();
@@ -370,8 +371,45 @@ export default function CalculatorScreen() {
               </Pressable>
             </View>
 
-            {/* Accessories */}
-            <Text style={styles.sectionTitle}>Accessoires</Text>
+            {/* Model-specific Options from Tariff */}
+            {state.model?.options && state.model.options.length > 0 && (
+              <>
+                <Text style={styles.sectionTitle}>Options {state.model.name.split(' ')[0]}</Text>
+                {state.model.options
+                  .filter(opt => opt.priceTTC > 0)
+                  .map(opt => {
+                    const isSelected = state.selectedOptions.some(o => o.option.id === opt.id);
+                    return (
+                      <Pressable
+                        key={opt.id}
+                        style={[styles.accItem, isSelected && { borderColor: brandColor, backgroundColor: `${brandColor}10` }]}
+                        onPress={() => isSelected ? removeVehicleOption(opt.id) : addVehicleOption(opt)}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.accName}>{opt.name}</Text>
+                          {opt.code ? <Text style={styles.optCode}>{opt.code}</Text> : null}
+                          {opt.availableOn.length > 0 && (
+                            <Text style={styles.optTrims}>{opt.availableOn.join(' · ')}</Text>
+                          )}
+                          <Text style={[styles.accPrice, { color: brandColor }]}>
+                            {opt.priceTTC > 0 ? formatCurrency(opt.priceTTC) : 'Inclus'}
+                          </Text>
+                        </View>
+                        <View style={[styles.optToggle, isSelected && { backgroundColor: brandColor }]}>
+                          <MaterialIcons
+                            name={isSelected ? 'check' : 'add'}
+                            size={18}
+                            color={isSelected ? Colors.textInverse : brandColor}
+                          />
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+              </>
+            )}
+
+            {/* Accessories separator */}
+            <Text style={styles.sectionTitle}>Accessoires Généraux</Text>
             <TextInput
               style={styles.input}
               value={accSearch}
@@ -417,6 +455,19 @@ export default function CalculatorScreen() {
                 </View>
               );
             })}
+
+            {/* Selected options summary */}
+            {state.selectedOptions.length > 0 && (
+              <View style={styles.selAccBox}>
+                <Text style={styles.selAccTitle}>Options sélectionnées ({state.selectedOptions.length})</Text>
+                {state.selectedOptions.map(so => (
+                  <View key={so.option.id} style={styles.selAccRow}>
+                    <Text style={styles.selAccName}>{so.option.name}</Text>
+                    <Text style={styles.selAccPrice}>{so.option.priceTTC > 0 ? formatCurrency(so.option.priceTTC) : 'Inclus'}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
 
             {/* Selected accessories summary */}
             {state.accessories.length > 0 && (
@@ -478,6 +529,7 @@ export default function CalculatorScreen() {
             <Row label="Prix tarif TTC" value={formatCurrency(bd.vehiclePriceTTC)} />
             <Row label={`Prix tarif HT (TVA ${bd.tvaRate}%)`} value={formatCurrency(bd.vehiclePriceHT)} muted />
             {bd.paintPriceTTC > 0 && <Row label="Peinture métallisée" value={`+ ${formatCurrency(bd.paintPriceTTC)}`} />}
+            {bd.vehicleOptionsTotalTTC > 0 && <Row label="Options véhicule" value={`+ ${formatCurrency(bd.vehicleOptionsTotalTTC)}`} />}
             {bd.accessoriesTotalTTC > 0 && <Row label="Accessoires" value={`+ ${formatCurrency(bd.accessoriesTotalTTC)}`} />}
             <View style={styles.divider} />
             {bd.discountTTC > 0 && (
@@ -620,6 +672,13 @@ const styles = StyleSheet.create({
   accItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.sm, borderWidth: 1, borderColor: Colors.surfaceBorder },
   accName: { color: Colors.textPrimary, fontSize: Typography.sizes.sm, fontWeight: '500', marginBottom: 2 },
   accPrice: { fontSize: Typography.sizes.sm, fontWeight: '700' },
+  optCode: { color: Colors.textMuted, fontSize: Typography.sizes.xs, marginBottom: 2 },
+  optTrims: { color: Colors.info, fontSize: Typography.sizes.xs, marginBottom: 2 },
+  optToggle: {
+    width: 36, height: 36, borderRadius: Radius.full,
+    borderWidth: 1, borderColor: Colors.surfaceBorder,
+    justifyContent: 'center', alignItems: 'center',
+  },
   addAccBtn: { width: 36, height: 36, borderRadius: Radius.full, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
   qtyRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   qtyBtn: { width: 30, height: 30, borderRadius: Radius.full, backgroundColor: Colors.surfaceElevated, justifyContent: 'center', alignItems: 'center' },

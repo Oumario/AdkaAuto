@@ -81,6 +81,7 @@ export default function InvoiceDetail() {
       `Prix TTC: ${formatCurrency(bd.vehiclePriceTTC)}`,
     ];
     if (bd.paintPriceTTC > 0) lines.push(`Peinture métallisée: + ${formatCurrency(bd.paintPriceTTC)}`);
+    if (bd.vehicleOptionsTotalTTC > 0) lines.push(`Options véhicule: + ${formatCurrency(bd.vehicleOptionsTotalTTC)}`);
     if (bd.accessoriesTotalTTC > 0) lines.push(`Accessoires: + ${formatCurrency(bd.accessoriesTotalTTC)}`);
     if (bd.totalDiscountTTC > 0) lines.push(`Remise totale: - ${formatCurrency(bd.totalDiscountTTC)} (${bd.totalDiscountPercent.toFixed(2)}%)`);
     lines.push('');
@@ -190,7 +191,18 @@ export default function InvoiceDetail() {
             </View>
           )}
 
-          {/* Accessories */}
+          {/* Vehicle options from tariff */}
+          {state.selectedOptions?.map((so: any) => (
+            <View key={so.option.id} style={styles.lineItem}>
+              <Text style={styles.lineItemName}>{so.option.name}{so.option.code ? ` (${so.option.code})` : ''}</Text>
+              <View style={styles.lineItemAmounts}>
+                <Text style={styles.lineItemHT}>{formatCurrency(so.option.priceHT)} HT</Text>
+                <Text style={styles.lineItemTTC}>{so.option.priceTTC > 0 ? formatCurrency(so.option.priceTTC) : 'Inclus'}</Text>
+              </View>
+            </View>
+          ))}
+
+          {/* Generic Accessories */}
           {state.accessories?.map((sa: any) => (
             <View key={sa.accessory.id} style={styles.lineItem}>
               <Text style={styles.lineItemName}>{sa.accessory.name} × {sa.quantity}</Text>
@@ -200,6 +212,17 @@ export default function InvoiceDetail() {
               </View>
             </View>
           ))}
+
+          {/* Vehicle options totals line */}
+          {bd.vehicleOptionsTotalTTC > 0 && (
+            <View style={styles.lineItem}>
+              <Text style={styles.lineItemName}>Options véhicule ({state.selectedOptions?.length || 0})</Text>
+              <View style={styles.lineItemAmounts}>
+                <Text style={styles.lineItemHT}>{formatCurrency(bd.vehicleOptionsTotalHT)} HT</Text>
+                <Text style={styles.lineItemTTC}>{formatCurrency(bd.vehicleOptionsTotalTTC)}</Text>
+              </View>
+            </View>
+          )}
 
           {/* FMS */}
           <View style={styles.lineItem}>

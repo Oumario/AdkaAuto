@@ -6,8 +6,8 @@ import {
   calculate,
   getClientTypeDiscount,
 } from '../services/calculationService';
-import { VehicleModel, getModelById } from '../constants/tariff';
-import { SelectedAccessory, PaintOption } from '../services/calculationService';
+import { VehicleModel, VehicleOption, getModelById } from '../constants/tariff';
+import { SelectedAccessory, SelectedOption, PaintOption } from '../services/calculationService';
 import { Accessory } from '../constants/accessories';
 
 export type CalculatorStep = 'brand' | 'model' | 'client' | 'options' | 'summary';
@@ -20,6 +20,7 @@ export interface CalculatorState {
   discountPercent: number;
   flashPercent: number;
   accessories: SelectedAccessory[];
+  selectedOptions: SelectedOption[];  // model-specific options from tariff
   paint: PaintOption;
   clientName: string;
   clientRef: string;
@@ -38,6 +39,7 @@ export function useCalculator() {
     discountPercent: 0,
     flashPercent: 0,
     accessories: [],
+    selectedOptions: [],
     paint: { isMetallic: false, priceHT: 0, priceTTC: 0 },
     clientName: '',
     clientRef: '',
@@ -56,6 +58,7 @@ export function useCalculator() {
       discountPercent: 0,
       flashPercent: 0,
       accessories: [],
+      selectedOptions: [],
       paint: { isMetallic: false, priceHT: 0, priceTTC: 0 },
       breakdown: null,
       step: 'model',
@@ -66,6 +69,7 @@ export function useCalculator() {
     setState(s => ({
       ...s,
       model,
+      selectedOptions: [],
       breakdown: null,
       step: 'client',
     }));
@@ -96,6 +100,24 @@ export function useCalculator() {
     setState(s => ({ ...s, paint, breakdown: null }));
   }, []);
 
+  // ── Vehicle options (from tariff sheet) ──────────────────────────────────
+  const addVehicleOption = useCallback((option: VehicleOption) => {
+    setState(s => {
+      const existing = s.selectedOptions.find(o => o.option.id === option.id);
+      if (existing) return s;
+      return { ...s, selectedOptions: [...s.selectedOptions, { option, quantity: 1 }], breakdown: null };
+    });
+  }, []);
+
+  const removeVehicleOption = useCallback((optionId: string) => {
+    setState(s => ({
+      ...s,
+      selectedOptions: s.selectedOptions.filter(o => o.option.id !== optionId),
+      breakdown: null,
+    }));
+  }, []);
+
+  // ── Generic accessories ──────────────────────────────────────────────────
   const addAccessory = useCallback((accessory: Accessory) => {
     setState(s => {
       const existing = s.accessories.find(a => a.accessory.id === accessory.id);
@@ -157,6 +179,7 @@ export function useCalculator() {
         discountPercent: s.discountPercent,
         flashPercent: s.flashPercent,
         accessories: s.accessories,
+        selectedOptions: s.selectedOptions,
         paint: s.paint,
         clientName: s.clientName,
         clientRef: s.clientRef,
@@ -182,6 +205,7 @@ export function useCalculator() {
       discountPercent: 0,
       flashPercent: 0,
       accessories: [],
+      selectedOptions: [],
       paint: { isMetallic: false, priceHT: 0, priceTTC: 0 },
       clientName: '',
       clientRef: '',
@@ -200,6 +224,8 @@ export function useCalculator() {
     setDiscountPercent,
     setFlashPercent,
     setPaint,
+    addVehicleOption,
+    removeVehicleOption,
     addAccessory,
     removeAccessory,
     updateAccessoryQty,
