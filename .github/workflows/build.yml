@@ -24,5 +24,12 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build APK
+      - name: Create eas.json
+        run: |
+          echo '{
+            "cli": { "version": ">= 9.0.0", "appVersionSource": "remote" },
+            "build": { "preview": { "android": { "buildType": "apk" } } }
+          }' > eas.json
+
+      - name: Build APK on Expo Servers
         run: eas build -p android --profile preview --non-interactive
